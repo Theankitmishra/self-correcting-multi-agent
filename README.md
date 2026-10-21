@@ -362,7 +362,7 @@ Specializing in Agentic AI Workflows, LLM Systems Research & Hardened Cloud Infr
 
 * 🌐 **Portfolio**: [ankitkumar.dev](https://theankitmishra.github.io)
 * 🐙 **GitHub**: [@Theankitmishra](https://github.com/Theankitmishra)
-* 💼 **LinkedIn**: [linkedin.com/in/theankitmishra](https://linkedin.com/in/theankitmishra)
+* 💼 **LinkedIn**: [linkedin.com/in/theankitmishraa](https://www.linkedin.com/in/theankitmishraa/)
 * 📧 **Email**: [theankitmishraa@gmail.com](mailto:theankitmishraa@gmail.com)
 
 ---
