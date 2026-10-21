@@ -24,6 +24,13 @@ try:
 except ImportError:
     pass
 
+HumanMessage = None
+SystemMessage = None
+ChatOpenAI = None
+StateGraph = None
+START = "__start__"
+END = "__end__"
+
 try:
     from langchain_core.messages import HumanMessage, SystemMessage
     from langchain_openai import ChatOpenAI
@@ -65,17 +72,76 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 
-def get_llm(role: str = "default") -> ChatOpenAI:
+class MockLLM:
+    """Deterministic offline fallback LLM for local testing and CI/CD."""
+    def __init__(self, role: str):
+        self.role = role
+
+    def invoke(self, messages):
+        user_prompt = ""
+        for m in messages:
+            content = getattr(m, "content", "")
+            if isinstance(content, str):
+                user_prompt += " " + content
+
+        class MockResponse:
+            def __init__(self, content):
+                self.content = content
+
+        if self.role == "writer":
+            return MockResponse(
+                "An AI agent is an autonomous software entity capable of perceiving its environment, "
+                "reasoning, and taking actions to achieve specific goals. Think of it like an airplane's "
+                "autopilot: it reads sensor telemetry (perception), computes pitch/yaw adjustments (reasoning), "
+                "and trims control surfaces (action) without continuous human input. In production engineering, "
+                "agents automate multi-step workflows with minimal friction."
+            )
+        elif self.role == "reviewer":
+            if "Example Code Snippet" in user_prompt or "Perception-Action Loop" in user_prompt or "state =" in user_prompt:
+                return MockResponse(
+                    json.dumps({
+                        "decision": "PASS",
+                        "score": 0.96,
+                        "feedback": "",
+                        "passed_rules": ["Beginner Accessibility", "Real-World Analogy", "Concrete Example", "Topic Precision"],
+                        "failed_rules": []
+                    })
+                )
+            else:
+                return MockResponse(
+                    json.dumps({
+                        "decision": "REVISE",
+                        "score": 0.64,
+                        "feedback": "Include a concrete Python LangGraph code snippet or structured perception-action loop to anchor the explanation.",
+                        "passed_rules": ["Beginner Accessibility", "Real-World Analogy", "Topic Precision"],
+                        "failed_rules": ["Concrete Example"]
+                    })
+                )
+        elif self.role == "reviser":
+            return MockResponse(
+                "An AI agent is an autonomous software entity that perceives its environment and takes actions toward a defined objective.\n\n"
+                "Analogy: Like an airplane's autopilot that constantly reads sensor telemetry and trims control surfaces without manual stick input.\n\n"
+                "Example Code Snippet:\n"
+                "```python\n"
+                "# Minimal Perception-Action Loop in LangGraph\n"
+                "state = {'goal': 'resolve_incident', 'status': 'investigating'}\n"
+                "while state['status'] != 'resolved':\n"
+                "    action = agent.decide(state)\n"
+                "    state = tool_runner.execute(action)\n"
+                "```\n\n"
+                "By chaining perception with deterministic tool-calling, agents solve complex distributed problems reliably."
+            )
+        return MockResponse("Execution completed successfully.")
+
+
+def get_llm(role: str = "default"):
     """
     Factory to instantiate LLM client based on configured provider.
-    Supports OpenAI, DigitalOcean Serverless Inference, and Groq.
+    Supports OpenAI, DigitalOcean Serverless Inference, Groq, and Mock Demo Mode.
     """
     if LLM_PROVIDER == "digitalocean":
-        if not MODEL_ACCESS_KEY:
-            raise ValueError(
-                "MODEL_ACCESS_KEY is required for DigitalOcean Serverless Inference. "
-                "Add it to your .env file."
-            )
+        if ChatOpenAI is None or not MODEL_ACCESS_KEY or MODEL_ACCESS_KEY.startswith("your_"):
+            return MockLLM(role)
         model_name = f"router:{DO_ROUTER}" if DO_ROUTER else DO_MODEL
         return ChatOpenAI(
             model=model_name,
@@ -87,25 +153,25 @@ def get_llm(role: str = "default") -> ChatOpenAI:
         )
 
     elif LLM_PROVIDER == "groq":
-        from langchain_groq import ChatGroq
-        if not GROQ_API_KEY:
-            raise ValueError(
-                "GROQ_API_KEY is required for Groq inference. Add it to your .env file."
+        try:
+            from langchain_groq import ChatGroq
+            if not GROQ_API_KEY or GROQ_API_KEY.startswith("your_"):
+                return MockLLM(role)
+            return ChatGroq(
+                model_name=GROQ_MODEL,
+                groq_api_key=GROQ_API_KEY,
+                temperature=TEMPERATURE,
             )
-        return ChatGroq(
-            model_name=GROQ_MODEL,
-            groq_api_key=GROQ_API_KEY,
-            temperature=TEMPERATURE,
-        )
+        except ImportError:
+            return MockLLM(role)
 
     else:
         # Default to OpenAI
-        if not OPENAI_API_KEY:
-            # Fallback mock client warning if neither key is provided
-            print("WARNING: OPENAI_API_KEY not found in environment. Using fallback mode.")
+        if ChatOpenAI is None or not OPENAI_API_KEY or OPENAI_API_KEY.startswith("your_") or OPENAI_API_KEY == "dummy-key":
+            return MockLLM(role)
         return ChatOpenAI(
             model=OPENAI_MODEL,
-            api_key=OPENAI_API_KEY or "dummy-key",
+            api_key=OPENAI_API_KEY,
             temperature=TEMPERATURE,
             max_retries=2,
         )
@@ -208,6 +274,15 @@ def _parse_reviewer_json(raw_text: str) -> Review:
 # -----------------------------------------------------------------------------
 # Node Implementations
 # -----------------------------------------------------------------------------
+def _msg(role: str, content: str):
+    if SystemMessage is not None and HumanMessage is not None:
+        return SystemMessage(content=content) if role == "system" else HumanMessage(content=content)
+    class SimpleMsg:
+        def __init__(self, c):
+            self.content = c
+    return SimpleMsg(content)
+
+
 def writer_node(state: AgentState) -> Dict[str, Any]:
     """
     Writer Agent: Generates initial technical draft.
@@ -225,8 +300,8 @@ def writer_node(state: AgentState) -> Dict[str, Any]:
     )
 
     response = llm.invoke([
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=f"Explain the following concept thoroughly: {state['topic']}")
+        _msg("system", system_prompt),
+        _msg("user", f"Explain the following concept thoroughly: {state['topic']}")
     ])
 
     draft_text = _content_to_text(response.content)
@@ -271,8 +346,8 @@ def reviewer_node(state: AgentState) -> Dict[str, Any]:
     )
 
     response = llm.invoke([
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=user_prompt)
+        _msg("system", system_prompt),
+        _msg("user", user_prompt)
     ])
 
     review = _parse_reviewer_json(_content_to_text(response.content))
@@ -319,8 +394,8 @@ def reviser_node(state: AgentState) -> Dict[str, Any]:
     )
 
     response = llm.invoke([
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=user_prompt)
+        _msg("system", system_prompt),
+        _msg("user", user_prompt)
     ])
 
     new_draft = _content_to_text(response.content)
@@ -396,17 +471,36 @@ def run_workflow(topic: str) -> Dict[str, Any]:
     final_state = initial_state.copy()
     events: List[Dict[str, Any]] = []
 
-    for update in multi_agent_graph.stream(initial_state, stream_mode="updates"):
-        for node_name, values in update.items():
-            final_state.update(values)
-            events.append({
-                "agent": node_name,
-                "draft": values.get("draft", ""),
-                "decision": values.get("decision", ""),
-                "score": values.get("score", 0.0),
-                "feedback": values.get("feedback", ""),
-                "revision_count": final_state.get("revision_count", 0),
-            })
+    if multi_agent_graph is not None:
+        for update in multi_agent_graph.stream(initial_state, stream_mode="updates"):
+            for node_name, values in update.items():
+                final_state.update(values)
+                events.append({
+                    "agent": node_name,
+                    "draft": values.get("draft", ""),
+                    "decision": values.get("decision", ""),
+                    "score": values.get("score", 0.0),
+                    "feedback": values.get("feedback", ""),
+                    "revision_count": final_state.get("revision_count", 0),
+                })
+    else:
+        # Standalone cyclic state machine execution
+        w_out = writer_node(final_state)
+        final_state.update(w_out)
+        events.append({"agent": "writer", **w_out})
+
+        while True:
+            rev_out = reviewer_node(final_state)
+            final_state.update(rev_out)
+            events.append({"agent": "reviewer", **rev_out})
+
+            next_step = route_after_review(final_state)
+            if next_step == "done":
+                break
+
+            reviser_out = reviser_node(final_state)
+            final_state.update(reviser_out)
+            events.append({"agent": "reviser", **reviser_out})
 
     return {
         "topic": topic,
