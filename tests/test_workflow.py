@@ -17,17 +17,17 @@ class TestMultiAgentLogic(unittest.TestCase):
         self.assertEqual(res.feedback, "Add an everyday analogy")
 
     def test_routing_logic(self):
-        # Case 1: PASS -> done
+        # Case 1: PASS -> pass to human gate
         state_pass = {"decision": "PASS", "revision_count": 0}
-        self.assertEqual(route_after_review(state_pass), "done")
+        self.assertEqual(route_after_review(state_pass), "pass")
 
         # Case 2: REVISE with revisions remaining -> revise
         state_revise = {"decision": "REVISE", "revision_count": 1}
         self.assertEqual(route_after_review(state_revise), "revise")
 
-        # Case 3: REVISE with max revisions exceeded -> done
+        # Case 3: REVISE with max revisions exceeded -> pass to human gate
         state_max = {"decision": "REVISE", "revision_count": 3}
-        self.assertEqual(route_after_review(state_max), "done")
+        self.assertEqual(route_after_review(state_max), "pass")
 
 
 if __name__ == "__main__":
