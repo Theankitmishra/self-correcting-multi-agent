@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Self-Correcting Multi-Agent System | LangGraph</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="logo-badge">
+          <span class="logo-dot"></span>
+          <span class="logo-title">Self-Correcting Multi-Agent AI</span>
+        </div>
+        <span class="engine-tag">LangGraph StateGraph · Cyclic Feedback Loop</span>
+      </div>
+      <div class="header-right">
+        <span class="status-pill">Provider: {{ provider | upper }}</span>
+        <a href="https://github.com/Theankitmishra/self-correcting-multi-agent" target="_blank" rel="noopener noreferrer" class="github-link">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+          <span>GitHub</span>
+        </a>
+      </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="main-container">
+      <!-- Architecture Visualizer Card -->
+      <section class="arch-card">
+        <div class="arch-header">
+          <span class="arch-label">[ ARCHITECTURE // STATE MACHINE GRAPH ]</span>
+          <span class="arch-hint">Cycles until Reviewer Judge outputs PASS or reaches max revisions ({{ max_revisions }})</span>
+        </div>
+        <div class="graph-pipeline">
+          <div class="graph-node" id="node-writer">
+            <span class="node-icon">✍️</span>
+            <div class="node-meta">
+              <strong>Writer Agent</strong>
+              <span>Initial Draft</span>
+            </div>
+          </div>
+          <div class="graph-arrow">→</div>
+          <div class="graph-node" id="node-reviewer">
+            <span class="node-icon">⚖️</span>
+            <div class="node-meta">
+              <strong>Reviewer (Judge)</strong>
+              <span>Rule Evaluation</span>
+            </div>
+          </div>
+          <div class="graph-arrow" id="arrow-cond">⇄</div>
+          <div class="graph-node" id="node-reviser">
+            <span class="node-icon">🔄</span>
+            <div class="node-meta">
+              <strong>Reviser Agent</strong>
+              <span>Self-Correction Loop</span>
+            </div>
+          </div>
+          <div class="graph-arrow">→</div>
+          <div class="graph-node node-end" id="node-end">
+            <span class="node-icon">✅</span>
+            <div class="node-meta">
+              <strong>Validated Output</strong>
+              <span>Zero Hallucination</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Input Area -->
+      <section class="search-section">
+        <form id="agentForm" class="search-form">
+          <div class="input-wrapper">
+            <input 
+              type="text" 
+              id="topicInput" 
+              placeholder="Enter any complex topic (e.g., How does an AI Agent work? What is LangGraph?)..." 
+              value="What is an AI Agent and how does it make autonomous decisions?"
+              required
+            />
+            <button type="submit" id="submitBtn" class="run-btn">
+              <span>Execute Multi-Agent Cycle</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+          </div>
+        </form>
+
+        <div class="preset-chips">
+          <span class="chips-label">Quick topics:</span>
+          <button class="chip-btn" data-topic="Explain LangGraph StateGraph vs simple LLM chains">LangGraph StateGraph</button>
+          <button class="chip-btn" data-topic="What is Model Context Protocol (MCP) in AI?">Model Context Protocol</button>
+          <button class="chip-btn" data-topic="How does Agent-as-a-Judge prevent LLM hallucinations?">Agent-as-a-Judge</button>
+          <button class="chip-btn" data-topic="What is AWS CloudWatch anomaly detection?">AWS CloudWatch Anomalies</button>
+        </div>
+      </section>
+
+      <!-- Results & Streaming Area -->
+      <section class="results-section" id="resultsArea" style="display: none;">
+        <div class="status-stream" id="statusStream">
+          <div class="pulse-indicator"></div>
+          <span id="statusText">Initializing StateGraph workflow...</span>
+        </div>
+
+        <!-- Live Step Timeline -->
+        <div class="timeline-container" id="timelineContainer"></div>
+
+        <!-- Final Answer Card -->
+        <div class="final-card" id="finalCard" style="display: none;">
+          <div class="final-header">
+            <div class="final-title-group">
+              <span class="final-badge">Verified Synthesis</span>
+              <h3 id="finalTopicTitle"></h3>
+            </div>
+            <div class="final-metrics" id="finalMetrics"></div>
+          </div>
+          <div class="final-body" id="finalBody"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const form = document.getElementById('agentForm');
+    const input = document.getElementById('topicInput');
+    const submitBtn = document.getElementById('submitBtn');
+    const resultsArea = document.getElementById('resultsArea');
+    const statusText = document.getElementById('statusText');
+    const timelineContainer = document.getElementById('timelineContainer');
+    const finalCard = document.getElementById('finalCard');
+    const finalTopicTitle = document.getElementById('finalTopicTitle');
+    const finalMetrics = document.getElementById('finalMetrics');
+    const finalBody = document.getElementById('finalBody');
+
+    document.querySelectorAll('.chip-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        input.value = btn.dataset.topic;
+        form.dispatchEvent(new Event('submit'));
+      });
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const topic = input.value.trim();
+      if (!topic) return;
+
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span>Running Multi-Agent Cycle...</span>';
+      resultsArea.style.display = 'block';
+      timelineContainer.innerHTML = '';
+      finalCard.style.display = 'none';
+      statusText.textContent = `Streaming LangGraph execution for: "${topic}"...`;
+
+      // Highlight Writer node
+      setGraphHighlight('node-writer');
+
+      try {
+        const response = await fetch('/api/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to run agent execution');
+        }
+
+        const data = await response.json();
+        renderResults(data);
+      } catch (err) {
+        statusText.textContent = `Error: ${err.message}`;
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<span>Execute Multi-Agent Cycle</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>';
+      }
+    });
+
+    function setGraphHighlight(activeId) {
+      document.querySelectorAll('.graph-node').forEach(n => n.classList.remove('active'));
+      const active = document.getElementById(activeId);
+      if (active) active.classList.add('active');
+    }
+
+    function renderResults(data) {
+      statusText.textContent = `Workflow Complete! Self-Correction Decided: ${data.final_decision} (Score: ${(data.final_score * 100).toFixed(0)}%)`;
+      setGraphHighlight('node-end');
+
+      // Build timeline events
+      timelineContainer.innerHTML = '';
+      data.events.forEach((ev, idx) => {
+        const eventEl = document.createElement('div');
+        eventEl.className = `timeline-item agent-${ev.agent}`;
+
+        let contentHtml = '';
+        if (ev.agent === 'writer') {
+          contentHtml = `
+            <div class="item-head">
+              <span class="agent-tag writer-tag">✍️ Step ${idx + 1}: Writer Agent Initial Draft</span>
+            </div>
+            <p class="item-text">${escapeHtml(ev.draft)}</p>
+          `;
+        } else if (ev.agent === 'reviewer') {
+          const isPass = ev.decision === 'PASS';
+          contentHtml = `
+            <div class="item-head">
+              <span class="agent-tag reviewer-tag">⚖️ Step ${idx + 1}: Reviewer Agent (Agent-as-a-Judge)</span>
+              <span class="decision-badge ${isPass ? 'decision-pass' : 'decision-revise'}">${ev.decision} · Score: ${(ev.score * 100).toFixed(0)}%</span>
+            </div>
+            ${ev.feedback ? `<div class="feedback-box"><strong>Critique & Required Fixes:</strong> ${escapeHtml(ev.feedback)}</div>` : '<div class="feedback-box pass-box">All 4 verification criteria satisfied! Ready for deployment.</div>'}
+          `;
+        } else if (ev.agent === 'reviser') {
+          contentHtml = `
+            <div class="item-head">
+              <span class="agent-tag reviser-tag">🔄 Step ${idx + 1}: Reviser Agent (Self-Correction Loop #${ev.revision_count})</span>
+            </div>
+            <p class="item-text">${escapeHtml(ev.draft)}</p>
+          `;
+        }
+
+        eventEl.innerHTML = contentHtml;
+        timelineContainer.appendChild(eventEl);
+      });
+
+      // Show Final Card
+      finalCard.style.display = 'block';
+      finalTopicTitle.textContent = data.topic;
+      finalMetrics.innerHTML = `
+        <span class="metric-pill">Revisions: ${data.total_revisions}</span>
+        <span class="metric-pill">Score: ${(data.final_score * 100).toFixed(0)}%</span>
+        <span class="metric-pill status-pass">Verdict: ${data.final_decision}</span>
+      `;
+      finalBody.innerHTML = `<p>${escapeHtml(data.final_answer).replace(/\\n/g, '<br>')}</p>`;
+      finalCard.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>
