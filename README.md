@@ -16,13 +16,15 @@ Unlike naive single-pass LLM chains that output hallucinations unchecked, this s
 
 ```mermaid
 flowchart LR
-    Start([User Topic]) --> Writer[✍️ Writer Agent]
+    Start([User Topic]) --> Researcher[🔍 Researcher Agent<br/>Tool Calling & External APIs]
+    Researcher --> Writer[✍️ Writer Agent<br/>Grounded Synthesis]
     Writer --> Reviewer[⚖️ Reviewer Agent<br/>Agent-as-a-Judge]
     Reviewer --> Cond{Passes All 4 Rules<br/>& Score ≥ 0.85?}
     Cond -- "No (REVISE)" --> Reviser[🔄 Reviser Agent<br/>Self-Correction Loop]
     Reviser --> Reviewer
-    Cond -- "Yes (PASS)" --> End([✅ Validated Output])
-    Cond -- "Max Revisions Reached" --> End
+    Cond -- "Yes (PASS)" --> Gate[🛡️ Human-in-the-Loop<br/>HITL Safety Approval Gate]
+    Cond -- "Max Revisions Reached" --> Gate
+    Gate --> End([✅ Validated Production Output])
 ```
 
 ### Cyclic State Transition Graph
@@ -33,7 +35,12 @@ flowchart LR
                        |
                        v
            +-----------------------+
-           |     Writer Node       |  <--- Initial draft generation
+           |    Researcher Node    |  <--- LLM Tool calling (External APIs/Knowledge)
+           +-----------------------+
+                       |
+                       v
+           +-----------------------+
+           |      Writer Node      |  <--- Factually grounded draft generation
            +-----------------------+
                        |
                        v
@@ -45,33 +52,43 @@ flowchart LR
       |          /           \
   (REVISE)      /             \  (PASS or Revisions >= MAX)
       |        v               v
-      |  +-----------+   +-----------+
-      +--|  Reviser  |   |    END    |  <--- Guaranteed verified answer
-         +-----------+   +-----------+
+      |  +-----------+   +-------------------+
+      +--|  Reviser  |   |  Human HITL Gate  |  <--- Safety verification checkpoint
+         +-----------+   +-------------------+
+                                   |
+                                   v
+                             +-----------+
+                             |    END    |  <--- Zero-hallucination verified output
+                             +-----------+
 ```
 
 ---
 
 ## 🤖 The Agents & Roles
 
-1. **Writer Agent (`writer`)**:
-   - Ingests the raw topic or query.
-   - Synthesizes an initial structured explanation adhering to beginner clarity, intuitive framing, and conceptual relevance.
+1. **Researcher Agent (`researcher`)**:
+   - Leverages **LLM tool-calling** to query external APIs and knowledge sources.
+   - Extracts grounded facts and domain constraints before drafting begins to anchor the model.
 
-2. **Reviewer Agent (`reviewer` / Agent-as-a-Judge)**:
+2. **Writer Agent (`writer`)**:
+   - Synthesizes the initial structured explanation using both the user query and verified research notes.
+   - Formats content for beginner clarity, intuitive framing, and conceptual relevance.
+
+3. **Reviewer Agent (`reviewer` / Agent-as-a-Judge)**:
    - Evaluates the candidate draft against 4 objective criteria:
      1. **Beginner Accessibility**: Intuitive and jargon-free phrasing.
      2. **Everyday Analogy**: Explicit, relatable real-world comparison.
-     3. **Concrete Example**: Concrete snippet or real-world use case.
-     4. **Topic Precision**: Zero-hallucination alignment with user prompt.
+     3. **Concrete Example**: Practical snippet or real-world use case.
+     4. **Topic Precision**: Zero-hallucination alignment with retrieved research notes.
    - Outputs strict, validated JSON containing a verdict (`PASS` | `REVISE`), quality score ($0.0 - 1.0$), passed/failed rules, and actionable critique.
-
-3. **Conditional Router (`route_after_review`)**:
-   - Inspects the structured decision. If `decision == "PASS"` or the iteration limit is reached, it terminates the graph gracefully. Otherwise, it triggers the self-correction branch.
 
 4. **Reviser Agent (`reviser`)**:
    - Ingests the reviewer's targeted critique and rewrites the content to specifically address each failure point.
    - Passes the improved revision back to the Reviewer Agent for secondary evaluation.
+
+5. **Human-in-the-Loop (HITL) Gate (`human_gate`) & MemorySaver Checkpointer**:
+   - Production safety checkpoint ensuring content satisfies verification criteria before emission.
+   - Compiled with **LangGraph `MemorySaver` checkpointing** for persistent state management, multi-turn session persistence, and graceful error recovery.
 
 ---
 
