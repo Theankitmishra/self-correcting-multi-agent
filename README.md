@@ -360,7 +360,7 @@ This project represents the practical systems engineering counterpart to **Ankit
 *M.Tech in Computer Science, Delhi Technological University (DTU)*  
 Specializing in Agentic AI Workflows, LLM Systems Research & Hardened Cloud Infrastructure.
 
-* 🌐 **Portfolio**: [ankitkumar.dev](https://theankitmishra.github.io)
+* 🌐 **Portfolio**: [portfolio-virid-nu-3wnb5oe7nu.vercel.app](https://portfolio-virid-nu-3wnb5oe7nu.vercel.app)
 * 🐙 **GitHub**: [@Theankitmishra](https://github.com/Theankitmishra)
 * 💼 **LinkedIn**: [linkedin.com/in/theankitmishraa](https://www.linkedin.com/in/theankitmishraa/)
 * 📧 **Email**: [theankitmishraa@gmail.com](mailto:theankitmishraa@gmail.com)
